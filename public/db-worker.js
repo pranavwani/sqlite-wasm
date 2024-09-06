@@ -1,4 +1,4 @@
-import SQLiteESMFactory from '../dist/wa-sqlite-async.mjs'; // Use async build
+import SQLiteESMFactory from '../wa-sqlite-async.mjs'; // Use async build
 import { IDBBatchAtomicVFS as MyVFS } from '../src/vfs/IDBBatchAtomicVFS.js';
 import * as SQLite from '../src/sqlite-api.js';
 let dbInstance;

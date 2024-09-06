@@ -1,1 +1,10 @@
-/*    /public/index.html   200
+[[redirects]]
+  from = "/*"
+  to = "/public/index.html"
+  status = 200
+  conditions = { language = "en" }
+
+[[redirects]]
+  from = "/db-worker.js"
+  to = "/public/db-worker.js"
+  status = 200

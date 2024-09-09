@@ -67,6 +67,16 @@ class DatabaseManager {
     async closeDatabase() {
         return this.postToWorker('closeDatabase');
     }
+
+    terminateWorker() {
+        if (this.worker) {
+            this.worker.terminate();
+            this.worker = null; // Reset the worker reference
+            console.log("Worker thread terminated");
+        } else {
+            console.warn("No worker thread to terminate");
+        }
+    }    
 }
 
 // Example usage
@@ -78,7 +88,7 @@ class DatabaseManager {
         await dbManager.createDBConnection('my_database.db');
 
         // Execute raw query
-        await dbManager.executeRawQuery('CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY, name TEXT);');
+        // await dbManager.executeRawQuery('CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY, name TEXT);');
 
         // Insert data using prepared statements
         await dbManager.executePreparedStatements([
@@ -92,7 +102,7 @@ class DatabaseManager {
             console.log('Table found! Now selecting data.');
         }
 
-        // Select data using prepared statements
+        // Select data using prepared statement
         const selectResults = await dbManager.executeSelectPreparedStatements(
             'SELECT * FROM test_table WHERE name = ?;',
             ['Alice']
@@ -106,6 +116,6 @@ class DatabaseManager {
         console.error('Error during database operations:', error);
     } finally {
         // Terminate the worker when done
-        dbManager.terminateWorker();
+        // dbManager.terminateWorker();
     }
 })();

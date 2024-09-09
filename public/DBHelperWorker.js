@@ -15,7 +15,7 @@ class DbHelper {
     static async createDBConnection(databaseName) {
         const dbInstance = new DbHelper(databaseName);
         await dbInstance.initializeDatabase();
-        dbInstance.setMaxSqlCacheSize();
+        await dbInstance.setMaxSqlCacheSize();
         return dbInstance;
     }
 
@@ -30,22 +30,9 @@ class DbHelper {
         console.log(`Database created: ${this.databaseName}`);
     }
 
-    async executeRawQuery(sql, selectionArgs = []) {
-        if (!this.db) throw new Error("Database not initialized");
-        try {
-            const results = [];
-            await this.sqlite3.exec(this.db, sql, (row, columns) => {
-                results.push({ row, columns });
-            });
-            return results;            
-        } catch (error) {
-            throw new Error(`Query failed: ${error}`);
-        }
-    }
-
-    setMaxSqlCacheSize() {
+    async setMaxSqlCacheSize() {
         if (this.db) {
-            this.sqlite3.exec(this.db, `PRAGMA cache_size = ${this.#MAX_SQL_CACHE_SIZE};`);
+            await this.sqlite3.exec(this.db, `PRAGMA cache_size = ${this.#MAX_SQL_CACHE_SIZE};`);
         }
     }
 
@@ -78,6 +65,9 @@ class DbHelper {
                 transactionIDs.push(lastID);
             }
             await this.sqlite3.exec(this.db, 'COMMIT;');
+            console.log("Transaction completed successfully");
+            console.log([null, transactionIDs]);
+            
             return [null, transactionIDs];
         } catch (error) {
             if (rollbackOnError) {
@@ -94,25 +84,29 @@ class DbHelper {
             let lastID = null;
 
             try {
-                await preparedStatement.step();
-                lastID = preparedStatement.lastInsertRowid();
+                lastID = await this.sqlite3.step(preparedStatement);
+                console.log({lastID});
+                
             } catch (error) {
                 runError = error.message;
                 console.error('Error inserting data:', error.message);
             } finally {
-                await preparedStatement.finalize();
+                await this.sqlite3.finalize(preparedStatement);
                 resolve([runError, lastID]);
             }
         });
     }
 
     async compileAndBindSQLiteStatement(sqlQuery, values) {
-        const preparedStatement = await this.sqlite3.prepare(this.db, sqlQuery);
-        for (let i = 0; i < values.length; i++) {
-            const value = values[i];
-            preparedStatement.bind_text(i + 1, value);
-        }
-        return preparedStatement;
+        const preparedStatements = await this.sqlite3.statements(this.db, sqlQuery);
+        const preparedStatementObj = await preparedStatements.next();
+
+        const result = this.sqlite3.bind_collection(preparedStatementObj.value, values);
+        
+        console.log(`Prepared statement compiled and bound: ${result === SQLite.SQLITE_OK}`);
+        
+
+        return preparedStatementObj.value;
     }
 
     async executeSelectQuery(sql, callback) {
@@ -124,26 +118,86 @@ class DbHelper {
         }
     }
 
-    async executeSelectPreparedStatements(sql, selectionArgs, callback) {
-        const preparedStatement = await this.compileAndBindSQLiteStatement(sql, selectionArgs);
+    async executeSelectPreparedStatements(sql, ...selectionArgs) {
         try {
-            const result = [];
-            while (preparedStatement.step()) {
-                result.push(preparedStatement.get());
-            }
-            callback(null, result);
-        } catch (err) {
-            callback(err, null);
-        } finally {
-            await preparedStatement.finalize();
+            return await this.executeRawQuery(sql, ...selectionArgs);
+        } catch (error) {
+            console.error("Error executing select prepared statement:", error);
+            throw new Error("Database select query failed");
         }
     }
+
+    async executeRawQuery(sql, ...selectionArgs) {
+        const records = [];
+        
+        try {
+            console.debug(`Executing raw select query: ${sql}, with arguments: ${selectionArgs}`);
+    
+            // Prepare the statement using ws-sqlite
+            for await (const stmt of this.sqlite3.statements(this.db, sql)) {
+                console.log(`Executing statement: ${sql}`);
+                // Bind the selection arguments if they exist
+                if (selectionArgs && selectionArgs.length) {
+                    console.log(`Binding selection arguments: ${selectionArgs}`);
+                    console.log(stmt);
+                    
+                    await this.sqlite3.bind_collection(stmt, selectionArgs);
+                }
+                
+                // Execute the statement and collect the results
+                while (await this.sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
+                    const record = {};
+    
+                    // Retrieve the column names and values
+                    const columnNames = await dbInstance.columnNames(stmt);
+                    for (const columnName of columnNames) {
+                        const columnIndex = await dbInstance.column(stmt, columnName);
+    
+                        // Switch case to determine column types and extract values
+                        switch (await dbInstance.columnType(stmt, columnIndex)) {
+                            case SQLite.SQLITE_BLOB:
+                                record[columnName] = await dbInstance.columnBlob(stmt, columnIndex);
+                                break;
+                            case SQLite.SQLITE_FLOAT:
+                                record[columnName] = await dbInstance.columnFloat(stmt, columnIndex);
+                                break;
+                            case SQLite.SQLITE_INTEGER:
+                                record[columnName] = await dbInstance.columnInteger(stmt, columnIndex);
+                                break;
+                            case SQLite.SQLITE_TEXT:
+                            default:
+                                record[columnName] = await dbInstance.columnText(stmt, columnIndex);
+                                break;
+                        }
+                    }
+                    records.push(record);
+                }
+                
+                // Reset the statement for further executions if needed
+                await this.sqlite3.reset(stmt);
+            }
+
+            console.log("Select query executed successfully");
+            console.log(records);
+            
+            return records;
+        } catch (error) {
+            console.error("Failed to executeRawQuery. Error: ", error);
+            throw new Error(`Database select query failed: ${error}`);
+        }
+    
+        return records;
+    }
+    
 
     async isTableFound(tableName, callback) {
         const query = `SELECT DISTINCT tbl_name FROM sqlite_master WHERE tbl_name = '${tableName}'`;
         try {
             const result = await this.sqlite3.exec(this.db, query);
-            callback(null, result.length > 0);
+
+            console.log(`Table ${tableName} found: ${result === SQLite.SQLITE_OK}`);
+            
+            callback(null, result === SQLite.SQLITE_OK);
         } catch (err) {
             callback(err, false);
         }

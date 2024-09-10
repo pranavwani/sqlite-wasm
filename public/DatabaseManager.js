@@ -88,7 +88,7 @@ class DatabaseManager {
         await dbManager.createDBConnection('my_database.db');
 
         // Execute raw query
-        await dbManager.executeRawQuery('CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY, name TEXT);');
+        await dbManager.executeQueries(['CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);']);
 
         // Insert data using prepared statements
         await dbManager.executePreparedStatements([

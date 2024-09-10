@@ -118,80 +118,64 @@ class DbHelper {
         }
     }
 
-    async executeSelectPreparedStatements(sql, ...selectionArgs) {
+    async executeSelectPreparedStatements(sql, selectionArgs) {
         try {
-            return await this.executeRawQuery(sql, ...selectionArgs);
+            return await this.executeRawQuery(sql, selectionArgs);
         } catch (error) {
             console.error("Error executing select prepared statement:", error);
             throw new Error("Database select query failed");
         }
     }
 
-    async executeRawQuery(sql, ...selectionArgs) {
+    async executeRawQuery(sql, selectionArgs) {
         const records = [];
         
         try {
-            console.debug(`Executing raw select query: ${sql}, with arguments: ${selectionArgs}`);
-    
             // Prepare the statement using ws-sqlite
             for await (const stmt of this.sqlite3.statements(this.db, sql)) {
-                console.log(`Executing statement: ${sql}`);
-                // Bind the selection arguments if they exist
-                if (selectionArgs && selectionArgs.length) {
-                    console.log(`Binding selection arguments: ${selectionArgs}`);
-                    console.log(stmt);
-                    
-                    await this.sqlite3.bind_collection(stmt, selectionArgs);
+                const columnCount = this.sqlite3.column_count(stmt);
+                const columnNames = [];
+
+                if (selectionArgs && selectionArgs?.length > 0)
+                    this.sqlite3.bind_collection(stmt, selectionArgs);
+                
+                for (let i = 0; i < columnCount; i++) {
+                    columnNames.push(this.sqlite3.column_name(stmt, i));
                 }
-                
-                const result = await this.sqlite3.step(stmt);
-                console.log(`Step result: ${result}`);
-                
-                // Execute the statement and collect the results
-                while (await this.sqlite3.step(stmt) === SQLite.SQLITE_DONE) {
-                    const record = {};
-    
-                    // Retrieve the column names and values
-                    const columnNames = await this.sqlite3.column_names(stmt);
-                    for (const columnName of columnNames) {
-                        const columnIndex = await this.sqlite3.column(stmt, columnName);
-    
-                        // Switch case to determine column types and extract values
-                        switch (await this.sqlite3.column_type(stmt, columnIndex)) {
-                            case SQLite.SQLITE_BLOB:
-                                record[columnName] = await this.sqlite3.column_blob(stmt, columnIndex);
+            
+                while (await this.sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
+                    const row = {};
+            
+                    for (let i = 0; i < columnCount; i++) {
+                        const columnType = this.sqlite3.column_type(stmt, i);
+            
+                        switch (columnType) {
+                            case SQLite.SQLITE_INTEGER:
+                                row[columnNames[i]] = this.sqlite3.column_int(stmt, i);
                                 break;
                             case SQLite.SQLITE_FLOAT:
-                                record[columnName] = await this.sqlite3.column_float(stmt, columnIndex);
+                                row[columnNames[i]] = this.sqlite3.column_float(stmt, i);
                                 break;
-                            case SQLite.SQLITE_INTEGER:
-                                record[columnName] = await this.sqlite3.columnInteger(stmt, columnIndex);
+                            case SQLite.SQLITE_BLOB:
+                                row[columnNames[i]] =this.sqlite3.column_blob(stmt, i);  // Handle blobs separately if needed
                                 break;
                             case SQLite.SQLITE_TEXT:
                             default:
-                                record[columnName] = await this.sqlite3.column_text(stmt, columnIndex);
+                                row[columnNames[i]] = this.sqlite3.column_text(stmt, i);
                                 break;
                         }
                     }
-                    records.push(record);
-                }
-                
-                // Reset the statement for further executions if needed
-                await this.sqlite3.reset(stmt);
-            }
 
-            console.log("Select query executed successfully");
-            console.log(records);
+                    records.push(row);
+                }
+            }
             
             return records;
         } catch (error) {
             console.error("Failed to executeRawQuery. Error: ", error);
             throw new Error(`Database select query failed: ${error}`);
         }
-    
-        return records;
     }
-    
 
     async isTableFound(tableName, callback) {
         const query = `SELECT DISTINCT tbl_name FROM sqlite_master WHERE tbl_name = '${tableName}'`;

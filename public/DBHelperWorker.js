@@ -144,29 +144,32 @@ class DbHelper {
                     await this.sqlite3.bind_collection(stmt, selectionArgs);
                 }
                 
+                const result = await this.sqlite3.step(stmt);
+                console.log(`Step result: ${result}`);
+                
                 // Execute the statement and collect the results
-                while (await this.sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
+                while (await this.sqlite3.step(stmt) === SQLite.SQLITE_DONE) {
                     const record = {};
     
                     // Retrieve the column names and values
-                    const columnNames = await dbInstance.columnNames(stmt);
+                    const columnNames = await this.sqlite3.column_names(stmt);
                     for (const columnName of columnNames) {
-                        const columnIndex = await dbInstance.column(stmt, columnName);
+                        const columnIndex = await this.sqlite3.column(stmt, columnName);
     
                         // Switch case to determine column types and extract values
-                        switch (await dbInstance.columnType(stmt, columnIndex)) {
+                        switch (await this.sqlite3.column_type(stmt, columnIndex)) {
                             case SQLite.SQLITE_BLOB:
-                                record[columnName] = await dbInstance.columnBlob(stmt, columnIndex);
+                                record[columnName] = await this.sqlite3.column_blob(stmt, columnIndex);
                                 break;
                             case SQLite.SQLITE_FLOAT:
-                                record[columnName] = await dbInstance.columnFloat(stmt, columnIndex);
+                                record[columnName] = await this.sqlite3.column_float(stmt, columnIndex);
                                 break;
                             case SQLite.SQLITE_INTEGER:
-                                record[columnName] = await dbInstance.columnInteger(stmt, columnIndex);
+                                record[columnName] = await this.sqlite3.columnInteger(stmt, columnIndex);
                                 break;
                             case SQLite.SQLITE_TEXT:
                             default:
-                                record[columnName] = await dbInstance.columnText(stmt, columnIndex);
+                                record[columnName] = await this.sqlite3.column_text(stmt, columnIndex);
                                 break;
                         }
                     }

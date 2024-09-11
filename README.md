@@ -5,7 +5,7 @@ const dbManager = new DatabaseManager();
 
 try {
     // Create a new database connection
-    await dbManager.createDBConnection('my_database.db');
+    await dbManager.createDBConnection('sync');
 
     // Execute raw query
     await dbManager.executeQueries([

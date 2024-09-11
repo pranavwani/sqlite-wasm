@@ -68,6 +68,27 @@ class DatabaseManager {
         return this.postToWorker('closeDatabase');
     }
 
+    async exportDatabase() {
+        const data = await this.postToWorker('exportDatabase');
+
+        // Create download link and trigger download
+        const { blob, databaseName } = data;
+        const url = URL.createObjectURL(blob);
+
+        const downloadLink = document.createElement('a');
+        
+        downloadLink.href = url;
+        downloadLink.download = `${databaseName}.sqlite3`;
+
+        // Trigger download
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+
+        // Clean up
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(url);
+    }
+
     terminateWorker() {
         if (this.worker) {
             this.worker.terminate();
@@ -85,7 +106,7 @@ class DatabaseManager {
 
     try {
         // Create a new database connection
-        await dbManager.createDBConnection('my_database.db');
+        await dbManager.createDBConnection('sync');
 
         // Execute raw query
         await dbManager.executeQueries(['CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);']);
@@ -108,6 +129,14 @@ class DatabaseManager {
             ['Alice']
         );
         console.log('Selected data:', selectResults);
+
+        try {
+            // await dbManager.exportDatabase();
+
+            console.log("Database exported successfully.");
+        } catch (error) {
+            console.error("Error exporting database:", error);
+        }
 
         // Close the database connection
         await dbManager.closeDatabase();

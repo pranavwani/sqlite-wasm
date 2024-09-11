@@ -1,6 +1,7 @@
 import SQLiteESMFactory from '../wa-sqlite/src/dist/wa-sqlite-async.mjs';
 import { IDBBatchAtomicVFS as MyVFS } from '../wa-sqlite/src/vfs/IDBBatchAtomicVFS.js';
 import * as SQLite from '../wa-sqlite/src/sqlite-api.js';
+import DatabaseSource from './DatabaseSource.js';
 
 let dbInstance;
 
@@ -196,6 +197,28 @@ class DbHelper {
             console.log("Database connection closed");
         }
     }
+
+    async exportDatabaseIntoFile() {
+        console.log("Exporting database into file...");
+
+        const vfs = await MyVFS.create('my_vfs', null);
+        const source = new DatabaseSource(vfs, this.databaseName);
+
+        source.isDone.finally(() => {
+            vfs.close();
+        });
+
+        const readableStream = new ReadableStream(source);
+        const reader = readableStream.getReader();
+        const chunks = [];
+
+        let result;
+        while (!(result = await reader.read()).done) {
+            chunks.push(result.value);
+        }
+
+        return new Blob(chunks, { type: 'application/vnd.sqlite3' });
+    }
 }
 
 // Updated Worker thread message handling
@@ -230,6 +253,10 @@ self.onmessage = async (event) => {
             case 'closeDatabase':
                 await dbInstance.closeDatabase();
                 result = { success: true, message: 'Database closed successfully' };
+                break;
+            case 'exportDatabase':
+                const blob = await dbInstance.exportDatabaseIntoFile();
+                result = { success: true, blob, databaseName:  dbInstance.databaseName ,message: 'Database exported successfully' };
                 break;
             default:
                 result = { error: 'Unknown action' };

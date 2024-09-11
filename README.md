@@ -34,6 +34,12 @@ try {
     );
     console.log('Selected data:', selectResults);
 
+   
+    // Exporting a database into file: sync.sqlite3
+    await dbManager.exportDatabase();
+
+    console.log("Database exported successfully.");
+   
     // Close the database connection
     await dbManager.closeDatabase();
 } catch (error) {

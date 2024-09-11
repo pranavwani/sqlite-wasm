@@ -81,7 +81,7 @@ class DatabaseManager {
 
 // Example usage
 (async () => {
-    const dbManager = new DatabaseManager('./DBHelperWorker.js');
+    const dbManager = new DatabaseManager('../wasm-sql/DBHelperWorker.js');
 
     try {
         // Create a new database connection
@@ -116,6 +116,6 @@ class DatabaseManager {
         console.error('Error during database operations:', error);
     } finally {
         // Terminate the worker when done
-        // dbManager.terminateWorker();
+        dbManager.terminateWorker();
     }
 })();

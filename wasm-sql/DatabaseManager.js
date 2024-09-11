@@ -1,6 +1,6 @@
 class DatabaseManager {
-    constructor(workerScript) {
-        this.worker = new Worker(workerScript, { type: 'module' });
+    constructor() {
+        this.worker = new Worker('../wasm-sql/DBHelperWorker.js', { type: 'module' });
         this.pendingOperations = new Map(); // Track ongoing operations
 
         // Listen for messages from the worker
@@ -81,7 +81,7 @@ class DatabaseManager {
 
 // Example usage
 (async () => {
-    const dbManager = new DatabaseManager('../wasm-sql/DBHelperWorker.js');
+    const dbManager = new DatabaseManager();
 
     try {
         // Create a new database connection

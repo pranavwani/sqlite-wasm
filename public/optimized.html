@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQLite WASM and IndexedDB Benchmark</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            margin-right: 10px;
+        }
+
+        .input-group input {
+            padding: 5px;
+            width: 100px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+
+        th {
+            background-color: #f4f4f4;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Optimized SQLite WASM & IndexedDB: Transactions, WAL, and More</h1>
+
+    <div class="container">
+        <div class="input-group">
+            <label for="operationCount">Number of Operations:</label>
+            <input type="number" id="operationCount" value="1000" min="100">
+        </div>
+
+        <div>
+            <button id="runButton">Run Benchmarks</button>
+        </div>
+
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>Operation</th>
+                    <th>IndexedDB (s/ms)</th>
+                    <th>SQLite WASM (s/ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Regular INSERT</td>
+                    <td id="indexeddb-regular-insert">-</td>
+                    <td id="sqlite-regular-insert">-</td>
+                </tr>
+                <tr>
+                    <td>Batch INSERT (Transaction)</td>
+                    <td id="indexeddb-batch-insert">-</td>
+                    <td id="sqlite-batch-insert">-</td>
+                </tr>
+                <tr>
+                    <td>Prepared INSERT</td>
+                    <td>-</td>
+                    <td id="sqlite-prepared-insert">-</td>
+                </tr>
+                <tr>
+                    <td>WAL Mode INSERT</td>
+                    <td>-</td>
+                    <td id="sqlite-wal-insert">-</td>
+                </tr>
+                <tr>
+                    <td>Cache Size INSERT</td>
+                    <td>-</td>
+                    <td id="sqlite-cache-insert">-</td>
+                </tr>
+                <tr>
+                    <td>Synchronous OFF INSERT</td>
+                    <td>-</td>
+                    <td id="sqlite-sync-off-insert">-</td>
+                </tr>
+                <tr>
+                    <td>Regular UPDATE</td>
+                    <td id="indexeddb-regular-update">-</td>
+                    <td id="sqlite-regular-update">-</td>
+                </tr>
+                <tr>
+                    <td>Batch UPDATE (Transaction)</td>
+                    <td id="indexeddb-batch-update">-</td>
+                    <td id="sqlite-batch-update">-</td>
+                </tr>
+                <tr>
+                    <td>Prepared UPDATE</td>
+                    <td>-</td>
+                    <td id="sqlite-prepared-update">-</td>
+                </tr>
+                <tr>
+                    <td>WAL Mode UPDATE</td>
+                    <td>-</td>
+                    <td id="sqlite-wal-update">-</td>
+                </tr>
+                <tr>
+                    <td>Cache Size UPDATE</td>
+                    <td>-</td>
+                    <td id="sqlite-cache-update">-</td>
+                </tr>
+                <tr>
+                    <td>Synchronous OFF UPDATE</td>
+                    <td>-</td>
+                    <td id="sqlite-sync-off-update">-</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.1/sql-wasm.js"></script>
+    <script>
+        /***************** SQLite (WASM) Benchmarking *****************/
+        // Initialize SQLite
+        async function initSQLiteDatabase() {
+            const SQL = await initSqlJs({ locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.1/sql-wasm.wasm` });
+            const db = new SQL.Database();
+            db.exec("CREATE TABLE IF NOT EXISTS my_table (id INTEGER PRIMARY KEY, name TEXT, value INTEGER)");
+            return db;
+        }
+
+        // SQLite Regular INSERT and UPDATE
+        async function benchmarkSQLiteRegularInsertUpdate(db, numberOfOperations, data) {
+            console.time('SQLite Regular INSERT');
+            let startTime = performance.now();
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`INSERT INTO my_table (name, value) VALUES ('${data[i].name}', ${data[i].value})`);
+            }
+            let insertTime = performance.now() - startTime;
+            console.timeEnd('SQLite Regular INSERT');
+            
+            console.time('SQLite Regular UPDATE');
+            startTime = performance.now();
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`UPDATE my_table SET value = ${data[i].newValue} WHERE id = ${i+1}`);
+            }
+            let updateTime = performance.now() - startTime;
+            console.timeEnd('SQLite Regular UPDATE');
+            
+            return { insertTime, updateTime };
+        }
+
+        // SQLite Batch INSERT/UPDATE
+        async function benchmarkSQLiteBatchInsertUpdate(db, numberOfOperations, data) {
+            console.time('SQLite Batch INSERT');
+            let startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`INSERT INTO my_table (name, value) VALUES ('${data[i].name}', ${data[i].value})`);
+            }
+            db.exec("COMMIT");
+            let insertTime = performance.now() - startTime;
+            console.timeEnd('SQLite Batch INSERT');
+
+            console.time('SQLite Batch UPDATE');
+            startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`UPDATE my_table SET value = ${data[i].newValue} WHERE id = ${i+1}`);
+            }
+            db.exec("COMMIT");
+            let updateTime = performance.now() - startTime;
+            console.timeEnd('SQLite Batch UPDATE');
+
+            return { insertTime, updateTime };
+        }
+
+        // SQLite Prepared INSERT/UPDATE
+        async function benchmarkSQLitePreparedStatements(db, numberOfOperations, data) {
+            console.time('SQLite Prepared INSERT');
+            let startTime = performance.now();
+            let insertStmt = db.prepare("INSERT INTO my_table (name, value) VALUES (?, ?)");
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                insertStmt.run([data[i].name, data[i].value]);
+            }
+            db.exec("COMMIT");
+            insertStmt.free();
+            let insertTime = performance.now() - startTime;
+            console.timeEnd('SQLite Prepared INSERT');
+
+            console.time('SQLite Prepared UPDATE');
+            startTime = performance.now();
+            let updateStmt = db.prepare("UPDATE my_table SET value = ? WHERE id = ?");
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                updateStmt.run([data[i].newValue, i+1]);
+            }
+            db.exec("COMMIT");
+            updateStmt.free();
+            let updateTime = performance.now() - startTime;
+            console.timeEnd('SQLite Prepared UPDATE');
+
+            return { insertTime, updateTime };
+        }
+
+        // SQLite WAL Mode INSERT/UPDATE
+        async function benchmarkSQLiteWALMode(db, numberOfOperations, data) {
+            db.exec("PRAGMA journal_mode = WAL");
+
+            console.time('SQLite WAL INSERT');
+            let startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`INSERT INTO my_table (name, value) VALUES ('${data[i].name}', ${data[i].value})`);
+            }
+            db.exec("COMMIT");
+            let insertTime = performance.now() - startTime;
+            console.timeEnd('SQLite WAL INSERT');
+
+            console.time('SQLite WAL UPDATE');
+            startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`UPDATE my_table SET value = ${data[i].newValue} WHERE id = ${i+1}`);
+            }
+            db.exec("COMMIT");
+            let updateTime = performance.now() - startTime;
+            console.timeEnd('SQLite WAL UPDATE');
+
+            return { insertTime, updateTime };
+        }
+
+        // SQLite Cache Size INSERT/UPDATE
+        async function benchmarkSQLiteCacheSize(db, numberOfOperations, data, cacheSize) {
+            db.exec(`PRAGMA cache_size = ${cacheSize}`);
+
+            console.time('SQLite Cache INSERT');
+            let startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`INSERT INTO my_table (name, value) VALUES ('${data[i].name}', ${data[i].value})`);
+            }
+            db.exec("COMMIT");
+            let insertTime = performance.now() - startTime;
+            console.timeEnd('SQLite Cache INSERT');
+
+            console.time('SQLite Cache UPDATE');
+            startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`UPDATE my_table SET value = ${data[i].newValue} WHERE id = ${i+1}`);
+            }
+            db.exec("COMMIT");
+            let updateTime = performance.now() - startTime;
+            console.timeEnd('SQLite Cache UPDATE');
+
+            return { insertTime, updateTime };
+        }
+
+        // SQLite Synchronous OFF INSERT/UPDATE
+        async function benchmarkSQLiteSynchronousOff(db, numberOfOperations, data) {
+            db.exec("PRAGMA synchronous = OFF");
+
+            console.time('SQLite Synchronous OFF INSERT');
+            let startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`INSERT INTO my_table (name, value) VALUES ('${data[i].name}', ${data[i].value})`);
+            }
+            db.exec("COMMIT");
+            let insertTime = performance.now() - startTime;
+            console.timeEnd('SQLite Synchronous OFF INSERT');
+
+            console.time('SQLite Synchronous OFF UPDATE');
+            startTime = performance.now();
+            db.exec("BEGIN TRANSACTION");
+            for (let i = 0; i < numberOfOperations; i++) {
+                db.exec(`UPDATE my_table SET value = ${data[i].newValue} WHERE id = ${i+1}`);
+            }
+            db.exec("COMMIT");
+            let updateTime = performance.now() - startTime;
+            console.timeEnd('SQLite Synchronous OFF UPDATE');
+
+            return { insertTime, updateTime };
+        }
+
+        /***************** IndexedDB Benchmarking *****************/
+        // Initialize IndexedDB
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open("BenchmarkDB", 1);
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains("my_table")) {
+                        const store = db.createObjectStore("my_table", { keyPath: "id", autoIncrement: true });
+                    }
+                };
+                request.onsuccess = (event) => resolve(event.target.result);
+                request.onerror = (event) => reject(event.target.error);
+            });
+        }
+
+        // IndexedDB Regular INSERT and UPDATE
+        async function benchmarkIndexedDBRegularInsertUpdate(db, numberOfOperations, data) {
+            return new Promise((resolve) => {
+                console.time('IndexedDB Regular INSERT');
+                let startTime = performance.now();
+                const transaction = db.transaction("my_table", "readwrite");
+                const store = transaction.objectStore("my_table");
+                
+                for (let i = 0; i < numberOfOperations; i++) {
+                    store.add({ name: data[i].name, value: data[i].value });
+                }
+
+                transaction.oncomplete = () => {
+                    let insertTime = performance.now() - startTime;
+                    console.timeEnd('IndexedDB Regular INSERT');
+
+                    console.time('IndexedDB Regular UPDATE');
+                    startTime = performance.now();
+                    const updateTransaction = db.transaction("my_table", "readwrite");
+                    const updateStore = updateTransaction.objectStore("my_table");
+
+                    for (let i = 0; i < numberOfOperations; i++) {
+                        const updatedValue = { id: i + 1, name: data[i].name, value: data[i].newValue };
+                        updateStore.put(updatedValue);
+                    }
+
+                    updateTransaction.oncomplete = () => {
+                        let updateTime = performance.now() - startTime;
+                        console.timeEnd('IndexedDB Regular UPDATE');
+                        resolve({ insertTime, updateTime });
+                    };
+                };
+            });
+        }
+
+        // IndexedDB Batch INSERT/UPDATE
+        async function benchmarkIndexedDBBatchInsertUpdate(db, numberOfOperations, data) {
+            return new Promise((resolve) => {
+                console.time('IndexedDB Batch INSERT');
+                let startTime = performance.now();
+                const transaction = db.transaction("my_table", "readwrite");
+                const store = transaction.objectStore("my_table");
+
+                for (let i = 0; i < numberOfOperations; i++) {
+                    store.add({ name: data[i].name, value: data[i].value });
+                }
+
+                transaction.oncomplete = () => {
+                    let insertTime = performance.now() - startTime;
+                    console.timeEnd('IndexedDB Batch INSERT');
+
+                    console.time('IndexedDB Batch UPDATE');
+                    const updateTransaction = db.transaction("my_table", "readwrite");
+                    const updateStore = updateTransaction.objectStore("my_table");
+
+                    for (let i = 0; i < numberOfOperations; i++) {
+                        const updatedValue = { id: i + 1, name: data[i].name, value: data[i].newValue };
+                        updateStore.put(updatedValue);
+                    }
+
+                    updateTransaction.oncomplete = () => {
+                        let updateTime = performance.now() - startTime;
+                        console.timeEnd('IndexedDB Batch UPDATE');
+                        resolve({ insertTime, updateTime });
+                    };
+                };
+            });
+        }
+
+        /***************** Utility Functions *****************/
+        // Prepare data for benchmarking
+        function prepareData(numberOfOperations) {
+            let data = [];
+            for (let i = 0; i < numberOfOperations; i++) {
+                data.push({ name: `name_${i}`, value: i, newValue: i + 100 });
+            }
+            return data;
+        }
+
+        // Format time in both milliseconds and seconds
+        function formatTime(timeInMs) {
+            const timeInSeconds = (timeInMs / 1000).toFixed(2);
+            const timeInMilliseconds = timeInMs.toFixed(0);
+            return `${timeInSeconds}s / ${timeInMilliseconds}ms`;
+        }
+
+        // Run all benchmarks
+        async function runAllBenchmarks(sqliteDb, indexedDb, numberOfOperations, data) {
+            // SQLite Benchmarks
+            let sqliteResults;
+
+            sqliteResults = await benchmarkSQLiteRegularInsertUpdate(sqliteDb, numberOfOperations, data);
+            document.getElementById('sqlite-regular-insert').textContent = formatTime(sqliteResults.insertTime);
+            document.getElementById('sqlite-regular-update').textContent = formatTime(sqliteResults.updateTime);
+
+            sqliteResults = await benchmarkSQLiteBatchInsertUpdate(sqliteDb, numberOfOperations, data);
+            document.getElementById('sqlite-batch-insert').textContent = formatTime(sqliteResults.insertTime);
+            document.getElementById('sqlite-batch-update').textContent = formatTime(sqliteResults.updateTime);
+
+            sqliteResults = await benchmarkSQLitePreparedStatements(sqliteDb, numberOfOperations, data);
+            document.getElementById('sqlite-prepared-insert').textContent = formatTime(sqliteResults.insertTime);
+            document.getElementById('sqlite-prepared-update').textContent = formatTime(sqliteResults.updateTime);
+
+            sqliteResults = await benchmarkSQLiteWALMode(sqliteDb, numberOfOperations, data);
+            document.getElementById('sqlite-wal-insert').textContent = formatTime(sqliteResults.insertTime);
+            document.getElementById('sqlite-wal-update').textContent = formatTime(sqliteResults.updateTime);
+
+            sqliteResults = await benchmarkSQLiteCacheSize(sqliteDb, numberOfOperations, data, -20000); // Cache size in 2KB pages
+            document.getElementById('sqlite-cache-insert').textContent = formatTime(sqliteResults.insertTime);
+            document.getElementById('sqlite-cache-update').textContent = formatTime(sqliteResults.updateTime);
+
+            sqliteResults = await benchmarkSQLiteSynchronousOff(sqliteDb, numberOfOperations, data);
+            document.getElementById('sqlite-sync-off-insert').textContent = formatTime(sqliteResults.insertTime);
+            document.getElementById('sqlite-sync-off-update').textContent = formatTime(sqliteResults.updateTime);
+
+            // IndexedDB Benchmarks
+            indexedDBResults = await benchmarkIndexedDBRegularInsertUpdate(indexedDb, numberOfOperations, data);
+            document.getElementById('indexeddb-regular-insert').textContent = formatTime(indexedDBResults.insertTime);
+            document.getElementById('indexeddb-regular-update').textContent = formatTime(indexedDBResults.updateTime);
+
+            indexedDBResults = await benchmarkIndexedDBBatchInsertUpdate(indexedDb, numberOfOperations, data);
+            document.getElementById('indexeddb-batch-insert').textContent = formatTime(indexedDBResults.insertTime);
+            document.getElementById('indexeddb-batch-update').textContent = formatTime(indexedDBResults.updateTime);
+        }
+
+        // Event listener for running benchmarks
+        document.getElementById('runButton').addEventListener('click', async function () {
+            const numberOfOperations = parseInt(document.getElementById('operationCount').value);
+            const data = prepareData(numberOfOperations);
+
+            const sqliteDb = await initSQLiteDatabase();
+            const indexedDb = await initIndexedDB();
+            await runAllBenchmarks(sqliteDb, indexedDb, numberOfOperations, data);
+        });
+    </script>
+
+</body>
+</html>
